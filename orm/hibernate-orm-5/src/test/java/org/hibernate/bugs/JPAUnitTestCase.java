@@ -1,5 +1,6 @@
 package org.hibernate.bugs;
 
+import static org.junit.Assert.assertEquals;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
@@ -26,6 +27,7 @@ public class JPAUnitTestCase {
 	@Before
 	public void init() {
 		entityManagerFactory = Persistence.createEntityManagerFactory( "templatePU" );
+		populateData();
 	}
 
 	@After
@@ -45,7 +47,53 @@ public class JPAUnitTestCase {
 	}
 
 	@Test
-	public void joinOnFetchNotWorking() throws Exception {
+	public void regularJoinOnJoinReadingDataProperly() {
+		EntityManager entityManager = entityManagerFactory.createEntityManager();
+		entityManager.getTransaction().begin();
+
+		CriteriaBuilder builder = entityManager.getCriteriaBuilder();
+		CriteriaQuery<Author> query = builder.createQuery(Author.class);
+
+		Root<Author> root = query.from(Author.class);
+		ListJoin<Author, Book> authorBookJoin = root.joinList("books", JoinType.LEFT);
+		ListJoin<Book, Chapter> bookChapterJoin = authorBookJoin.joinList("chapters", JoinType.LEFT);
+
+		Predicate finalPredicate = builder.equal(bookChapterJoin.get("name"), "Overview of HTTP");
+		query.where(finalPredicate);
+
+		Author author = entityManager.createQuery(query).getSingleResult();
+
+		assertEquals(author.name, "David Gourley");
+		assertEquals(author.books.get(0).name, "HTTP Definitive guide");
+		assertEquals(author.books.get(0).chapters.get(0).name, "Overview of HTTP");
+
+		entityManager.getTransaction().commit();
+		entityManager.close();
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void joinOnFetchThrowsIllegalArgumentException() throws Exception {
+		EntityManager entityManager = entityManagerFactory.createEntityManager();
+		entityManager.getTransaction().begin();
+
+		CriteriaBuilder builder = entityManager.getCriteriaBuilder();
+		CriteriaQuery<Author> query = builder.createQuery(Author.class);
+
+		Root<Author> root = query.from(Author.class);
+		ListJoin<Author, Book> authorBookJoin =  (ListJoin)root.fetch("books", JoinType.LEFT);
+
+		ListJoin<Book, Chapter> bookChapterJoin = authorBookJoin.joinList("chapters", JoinType.LEFT);
+
+		Predicate finalPredicate = builder.equal(bookChapterJoin.get("name"), "Overview of HTTP");
+		query.where(finalPredicate);
+
+		Author author = entityManager.createQuery(query).getSingleResult();
+
+		entityManager.getTransaction().commit();
+		entityManager.close();
+	}
+
+	public void populateData() {
 		EntityManager entityManager = entityManagerFactory.createEntityManager();
 		entityManager.getTransaction().begin();
 
@@ -66,32 +114,6 @@ public class JPAUnitTestCase {
 		book.author = author;
 
 		entityManager.persist(author);
-
-		// entityManager.createQuery
-		// Author persistedAuthor = entityManager
-		// 		.createQuery("SELECT author FROM Author author", Author.class).getSingleResult();
-		// System.out.println(persistedAuthor.name);
-
-		// CriteriaQuery<Author> query = new Criter
-		// entityManager.createQuer
-		CriteriaBuilder builder = entityManager.getCriteriaBuilder();
-		CriteriaQuery<Author> query = builder.createQuery(Author.class);
-
-		Root<Author> root = query.from(Author.class);
-		// ListJoin<Author, Book> authorBookJoin = root.joinList("books", JoinType.LEFT);
-		ListJoin<Author, Book> authorBookJoin =  (ListJoin)root.fetch("books", JoinType.LEFT);
-
-		ListJoin<Book, Chapter> bookChapterJoin = authorBookJoin.joinList("chapters", JoinType.LEFT);
-
-		Predicate finalPredicate = builder.equal(bookChapterJoin.get("name"), "Overview of HTTP");
-		query.where(finalPredicate);
-
-		Author persistedAuthor = entityManager.createQuery(query).getSingleResult();
-
-		System.out.println(persistedAuthor.name);
-		persistedAuthor.books.forEach(b -> {
-			System.out.println(b.name);
-		});
 
 		entityManager.getTransaction().commit();
 		entityManager.close();
